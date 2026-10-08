@@ -11,6 +11,13 @@ A static web app (no server, no build step). Open `index.html`, or host the fold
 - Fill in the highlighted fields; the preview updates live.
 - **Copy formatted** pastes into Outlook with bold text and clickable links intact. **Open in Outlook** starts a mail with To / Cc / Subject / body filled in.
 
+## Handy features
+- **Live date & time** from your device clock (top bar and hero panel, with time zone, week and day number). Click the clock to switch 12h / 24h.
+- **Quick jump** (`Ctrl+K`): open any template or run an action. `/` focuses search, `Ctrl+Enter` copies the open template.
+- **Pin** templates with the star; the sidebar also lists recently copied templates with a relative time.
+- **Fill-in progress** per template, and a heads-up if you copy while fields are still empty. Typed values survive a page refresh (this tab only).
+- Light / dark theme (follows your system by default), mobile menu, back-to-top button.
+
 ## Updating templates
 1. Turn on **Edit mode** (top right). Use **Edit, Duplicate, Move, Delete** on any template, or **New template**.
 2. In the editor: `{{Field}}` = fill-in box, `{{Type|A;B;C}}` = dropdown, `{{Notes|multiline}}` = large box,

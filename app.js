@@ -10,6 +10,64 @@
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
   var clone = function (o) { return JSON.parse(JSON.stringify(o)); };
 
+  /* ------------------------------------------------- preferences (per browser) */
+  var PREF_KEY = 'clinsys.hub.prefs.v1', VAL_KEY = 'clinsys.hub.values.v1';
+  var prefs = { theme: null, hour24: null, favs: [], recent: [] };
+  (function () {
+    try { var p = JSON.parse(localStorage.getItem(PREF_KEY) || 'null'); if (p) Object.keys(prefs).forEach(function (k) { if (p[k] !== undefined) prefs[k] = p[k]; }); } catch (e) {}
+  })();
+  function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) {} }
+  function systemIs24() { try { return !new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions().hour12; } catch (e) { return false; } }
+  function is24() { return prefs.hour24 == null ? systemIs24() : prefs.hour24; }
+  function theme() { return prefs.theme || (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'); }
+  function applyTheme() {
+    document.documentElement.setAttribute('data-theme', theme());
+    var b = document.getElementById('themeBtn'); if (b) b.textContent = theme() === 'light' ? '☀' : '☾';
+  }
+  applyTheme();
+  function escRe(x) { return String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+  /* ---------------------------------------------------- live clock (device time) */
+  function fmtTime(d) { return d.toLocaleTimeString(undefined, { hour: is24() ? '2-digit' : 'numeric', minute: '2-digit', second: '2-digit', hour12: !is24() }); }
+  function isoWeek(d) {
+    var t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())), n = t.getUTCDay() || 7;
+    t.setUTCDate(t.getUTCDate() + 4 - n); var y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+    return Math.ceil(((t - y0) / 86400000 + 1) / 7);
+  }
+  function dayOfYear(d) { return Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000); }
+  function tzLabel(d) {
+    var name = ''; try { name = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
+    var off = -d.getTimezoneOffset(), sign = off >= 0 ? '+' : '-', a = Math.abs(off), hh = Math.floor(a / 60), mm = a % 60;
+    return (name ? name.replace(/_/g, ' ') + ' · ' : '') + 'UTC' + sign + hh + (mm ? ':' + ('0' + mm).slice(-2) : '');
+  }
+  function greeting(d) { var h = d.getHours(); return h < 5 ? 'Working late' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; }
+  var lastMinute = -1;
+  function tickClock() {
+    var d = new Date(), ts = fmtTime(d);
+    $('#clockTime').textContent = ts;
+    $('#clockDate').textContent = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    var hero = $('#heroTime'); hero.textContent = ts;
+    $('#heroDate').textContent = d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    $('#heroTz').textContent = tzLabel(d);
+    $('#clockGreet').textContent = greeting(d);
+    $('#tagWeek').textContent = 'Week ' + isoWeek(d);
+    $('#tagDay').textContent = 'Day ' + dayOfYear(d);
+    if (d.getMinutes() !== lastMinute) { lastMinute = d.getMinutes(); refreshRelative(); }
+  }
+  function startClock() {
+    tickClock();
+    (function loop() { setTimeout(function () { tickClock(); loop(); }, 1000 - (Date.now() % 1000) + 5); })();
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) tickClock(); });
+    window.addEventListener('focus', tickClock);
+  }
+  function rel(ts) {
+    var m = Math.floor((Date.now() - ts) / 60000);
+    if (m < 1) return 'just now'; if (m < 60) return m + ' min ago';
+    var h = Math.floor(m / 60); if (h < 24) return h + ' h ago';
+    var d = Math.floor(h / 24); return d === 1 ? 'yesterday' : d + ' d ago';
+  }
+  function stamp() { var d = new Date(); return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) + ', ' + fmtTime(d); }
+
   var state = {
     data: null,            // working copy {version, settings, templates, changelog}
     hadLocal: false,
@@ -32,9 +90,9 @@
     return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'template';
   }
   function today() { return new Date().toISOString().slice(0, 10); }
-  function toast(msg) {
+  function toast(msg, ms) {
     var t = $('#toast'); t.textContent = msg; t.classList.add('show');
-    clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, 2200);
+    clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, ms || 2200);
   }
   function safeUrl(u) { return /^(https?:|mailto:)/i.test(u) ? u : '#'; }
   function download(name, text, mime) {
@@ -126,8 +184,8 @@
       else if (m[3] != null) {
         var url = urlFields(m[4], ctx.values), label = inline(m[3], ctx);
         if (ctx.text) {
-          var bare = url.replace(/^mailto:/i, '');
-          out += (label.indexOf(url) >= 0 || label === bare) ? label : label + ' (' + bare + ')';
+          var bare = url.replace(/^mailto:/i, ''), nz = function (x) { return String(x).replace(/^https?:\/\//i, '').replace(/\/$/, '').toLowerCase(); };
+          out += (nz(label) === nz(bare) || label.indexOf(url) >= 0) ? label : label + ' (' + bare + ')';
         } else out += '<a href="' + esc(safeUrl(url)) + '" target="_blank" rel="noopener">' + label + '</a>';
       } else {
         var f = parseField(m[5]), v = ctx.values[f.name];
@@ -163,6 +221,30 @@
   function metaText(str, ctx) { return inline(expandSig(str), ctx); }
 
   function valuesFor(id) { return state.values[id] || (state.values[id] = {}); }
+  function saveValues() { try { sessionStorage.setItem(VAL_KEY, JSON.stringify(state.values)); } catch (e) {} }
+  function loadValues() { try { state.values = JSON.parse(sessionStorage.getItem(VAL_KEY) || '{}') || {}; } catch (e) { state.values = {}; } }
+
+  function hl(s) {
+    var terms = state.query.trim().split(/\s+/).filter(Boolean);
+    if (!terms.length) return esc(s);
+    var re = new RegExp('(' + terms.map(escRe).join('|') + ')', 'gi');
+    return String(s).split(re).map(function (p, i) { return i % 2 ? '<mark>' + esc(p) + '</mark>' : esc(p); }).join('');
+  }
+  function progress(t) {
+    var fs = templateFields(t), vals = valuesFor(t.id), n = 0;
+    fs.forEach(function (f) { if (vals[f.name]) n++; });
+    return { filled: n, total: fs.length };
+  }
+  function missingFields(t, secIdx, withMeta) {
+    var secs = sections(t), list = secIdx == null ? secs : [secs[secIdx]];
+    var txt = list.map(function (x) { return expandSig(x.text); }).join('\n');
+    if (withMeta) txt += '\n' + [t.subject, t.to, t.cc].map(expandSig).join('\n');
+    var vals = valuesFor(t.id), seen = {}, out = [], re = /\{\{([^{}]+)\}\}/g, m;
+    while ((m = re.exec(txt))) { var f = parseField(m[1]); if (f.name && !seen[f.name]) { seen[f.name] = 1; if (!vals[f.name]) out.push(f.name); } }
+    return out;
+  }
+  function lastUsed(id) { var r = prefs.recent.filter(function (x) { return x.id === id; })[0]; return r ? r.ts : 0; }
+  function isPinned(id) { return prefs.favs.indexOf(id) >= 0; }
 
   function renderPreview(t) {
     var ctx = { values: valuesFor(t.id) }, secs = sections(t), isEmail = t.type !== 'chat', html = '';
@@ -196,10 +278,12 @@
   }
 
   function cardHTML(t, no) {
-    var isOpen = state.open.has(t.id), isEmail = t.type !== 'chat', multi = sections(t).length > 1;
+    var isOpen = state.open.has(t.id), isEmail = t.type !== 'chat', multi = sections(t).length > 1, pr = progress(t);
     return '<article class="card' + (isOpen ? ' open' : '') + '" id="t-' + esc(t.id) + '" data-id="' + esc(t.id) + '">' +
-      '<div class="card-head" data-action="toggle"><div class="card-no">' + no + '</div><h2 class="card-title">' + esc(t.title) + '</h2>' +
-      '<span class="badge cat">' + esc(t.category) + '</span><span class="badge type">' + (isEmail ? 'Email' : 'Chat') + '</span><span class="caret">▾</span></div>' +
+      '<div class="card-head" data-action="toggle"><div class="card-no">' + no + '</div><h2 class="card-title">' + hl(t.title) + '</h2>' +
+      '<button class="pin' + (isPinned(t.id) ? ' on' : '') + '" data-action="pin" type="button" title="' + (isPinned(t.id) ? 'Unpin' : 'Pin to sidebar') + '" aria-label="Pin template">' + (isPinned(t.id) ? '★' : '☆') + '</button>' +
+      (pr.total ? '<span class="badge prog' + (pr.filled === pr.total ? ' full' : '') + '" data-prog>' + pr.filled + '/' + pr.total + ' filled</span>' : '') +
+      '<span class="badge cat">' + hl(t.category) + '</span><span class="badge type">' + (isEmail ? 'Email' : 'Chat') + '</span><span class="caret">▾</span></div>' +
       '<div class="card-body">' +
       '<div class="edit-bar"><button class="btn sm primary" data-action="edit" type="button">Edit</button>' +
       '<button class="btn sm" data-action="dup" type="button">Duplicate</button>' +
@@ -207,15 +291,17 @@
       '<button class="btn sm" data-action="down" type="button">Move down ↓</button>' +
       '<button class="btn sm danger" data-action="del" type="button">Delete</button></div>' +
       (t.note ? '<div class="note-box">' + inline(t.note, { values: {} }) + '</div>' : '') +
-      '<div class="split"><div class="fields-col"><h4>Fill in</h4><div class="fields">' + fieldsHTML(t) + '</div>' +
+      '<div class="split"><div class="fields-col"><h4>Fill in' + (pr.total ? '<span data-progtext>' + pr.filled + ' of ' + pr.total + '</span>' : '') + '</h4>' +
+      (pr.total ? '<div class="progress"><i data-progbar style="width:' + Math.round(100 * pr.filled / pr.total) + '%"></i></div>' : '') + '<div class="fields">' + fieldsHTML(t) + '</div>' +
       '<button class="btn sm" data-action="clear" type="button">Clear fields</button></div>' +
       '<div class="preview-col"><h4>Preview</h4><div class="preview-wrap">' + renderPreview(t) + '</div>' +
       '<div class="actions">' +
       (multi ? '' : '<button class="btn primary" data-action="copy-body" type="button">Copy formatted</button>') +
       '<button class="btn" data-action="copy-text" type="button">Copy plain text</button>' +
       (isEmail ? '<button class="btn" data-action="mailto" type="button">✉ Open in Outlook</button>' : '') +
-      '</div></div></div></div></article>';
+      '</div><div class="card-foot" data-foot="' + esc(t.id) + '">' + footText(t.id) + '</div></div></div></div></article>';
   }
+  function footText(id) { var ts = lastUsed(id); return ts ? 'Last used ' + rel(ts) + ' · Ctrl+Enter copies this template' : 'Ctrl+Enter copies this template'; }
 
   /* ------------------------------------------------------------ list / nav */
   function haystack(t) { return [t.title, t.category, t.subject, t.body, t.note, t.to].join(' ').toLowerCase(); }
@@ -249,7 +335,7 @@
 
     // index (numbers follow the master order)
     $('#indexList').innerHTML = vis.map(function (t) {
-      return '<li><a href="#t-' + esc(t.id) + '"><span><span class="ix-title">' + esc(t.title) + '</span><span class="ix-cat">' + esc(t.category) + ' · ' + (t.type === 'chat' ? 'Chat' : 'Email') + '</span></span></a></li>';
+      return '<li><a href="#t-' + esc(t.id) + '"><span><span class="ix-title">' + hl(t.title) + '</span><span class="ix-cat">' + hl(t.category) + ' · ' + (t.type === 'chat' ? 'Chat' : 'Email') + '</span></span></a></li>';
     }).join('');
 
     // cards
@@ -263,13 +349,15 @@
         items.map(function (t) { return '<a href="#t-' + esc(t.id) + '" data-nav="' + esc(t.id) + '">' + esc(t.title) + '</a>'; }).join('') + '</div></details>';
     }).join('');
     $('#catList').innerHTML = cats.list.map(function (c) { return '<option value="' + esc(c) + '">'; }).join('');
+    renderSideLists();
+    $('#searchbar').classList.toggle('has-text', !!state.query);
     markActive(state.active);
     renderBanner();
   }
 
   function markActive(id) {
     state.active = id;
-    $$('.cat-links a').forEach(function (a) { a.classList.toggle('active', a.getAttribute('data-nav') === id); });
+    $$('.cat-links a, .mini-links a').forEach(function (a) { a.classList.toggle('active', a.getAttribute('data-nav') === id); });
   }
 
   function goTo(id, quiet) {
@@ -279,7 +367,7 @@
     state.open.add(id); renderAll();
     var el = document.getElementById('t-' + id);
     if (!el) return;
-    markActive(id);
+    markActive(id); document.body.classList.remove('nav-open');
     el.scrollIntoView({ behavior: quiet ? 'auto' : 'smooth', block: 'start' });
     el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
     if (history.replaceState) history.replaceState(null, '', '#t-' + id);
@@ -314,7 +402,39 @@
     var ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px';
     document.body.appendChild(ta); ta.select(); var ok = false; try { ok = document.execCommand('copy'); } catch (e) {} ta.remove(); return ok;
   }
-  function done(ok, msg) { toast(ok ? msg : 'Copy blocked by the browser – select the preview text and press Ctrl+C.'); }
+  function done(btn, ok, msg, missing, id) {
+    if (!ok) { toast('Copy blocked by the browser – select the preview text and press Ctrl+C.'); return; }
+    if (id) touch(id);
+    if (missing && missing.length) toast(msg + ' · still empty: ' + missing.slice(0, 3).join(', ') + (missing.length > 3 ? ' +' + (missing.length - 3) : ''), 4200);
+    else toast(msg);
+    if (btn && !btn._busy) {
+      btn._busy = true; var old = btn.textContent; btn.textContent = 'Copied ✓'; btn.classList.add('copied');
+      setTimeout(function () { btn.textContent = old; btn.classList.remove('copied'); btn._busy = false; }, 1500);
+    }
+  }
+  function touch(id) {
+    prefs.recent = [{ id: id, ts: Date.now() }].concat(prefs.recent.filter(function (r) { return r.id !== id; })).slice(0, 8);
+    savePrefs(); renderSideLists(); refreshRelative();
+  }
+  function refreshRelative() {
+    $$('.mini-links .when[data-ts]').forEach(function (el) { el.textContent = rel(+el.getAttribute('data-ts')); });
+    $$('.card-foot[data-foot]').forEach(function (el) { el.textContent = footText(el.getAttribute('data-foot')); });
+  }
+  function renderSideLists() {
+    var pins = prefs.favs.map(getT).filter(Boolean);
+    function link(t, extra) { return '<a href="#t-' + esc(t.id) + '" data-nav="' + esc(t.id) + '"><span>' + esc(t.title) + '</span>' + (extra || '') + '</a>'; }
+    $('#sidePinned').innerHTML = pins.length ? pins.map(function (t) { return link(t, '<span class="when">★</span>'); }).join('') : '<div class="side-empty">Click ☆ on a template to pin it here.</div>';
+    var rec = prefs.recent.filter(function (r) { return getT(r.id); }).slice(0, 5);
+    $('#sideRecent').innerHTML = rec.length ? rec.map(function (r) { return link(getT(r.id), '<span class="when" data-ts="' + r.ts + '">' + rel(r.ts) + '</span>'); }).join('') : '<div class="side-empty">Templates you copy show up here.</div>';
+    markActive(state.active);
+  }
+  function togglePin(id) {
+    var i = prefs.favs.indexOf(id); if (i >= 0) prefs.favs.splice(i, 1); else prefs.favs.push(id);
+    savePrefs(); renderSideLists();
+    var b = document.querySelector('#t-' + id + ' .pin');
+    if (b) { b.classList.toggle('on', isPinned(id)); b.textContent = isPinned(id) ? '★' : '☆'; b.title = isPinned(id) ? 'Unpin' : 'Pin to sidebar'; }
+    toast(isPinned(id) ? 'Pinned to sidebar' : 'Unpinned');
+  }
 
   function bodyOut(t, secIdx, mode) {
     var vals = valuesFor(t.id), secs = sections(t);
@@ -347,12 +467,13 @@
     var btn = e.target.closest('[data-action]'); if (!btn) return;
     var card = btn.closest('.card'), id = card.getAttribute('data-id'), t = getT(id), a = btn.getAttribute('data-action');
     if (a === 'toggle') { card.classList.toggle('open'); card.classList.contains('open') ? state.open.add(id) : state.open.delete(id); return; }
-    if (a === 'copy-body') return copyRich(bodyOut(t, null, 'html'), bodyOut(t, null, 'text')).then(function (ok) { done(ok, 'Copied with formatting – paste into Outlook'); });
-    if (a === 'copy-section') { var i = +btn.getAttribute('data-section'); return copyRich(bodyOut(t, i, 'html'), bodyOut(t, i, 'text')).then(function (ok) { done(ok, 'Copied with formatting'); }); }
-    if (a === 'copy-text') return copyPlain(bodyOut(t, null, 'text')).then(function (ok) { done(ok, 'Plain text copied'); });
-    if (a === 'copy-meta') { var k = btn.getAttribute('data-meta'); return copyPlain(metaOut(t, k)).then(function (ok) { done(ok, k.charAt(0).toUpperCase() + k.slice(1) + ' copied'); }); }
-    if (a === 'mailto') return openMail(t);
-    if (a === 'clear') { state.values[id] = {}; rerenderCard(id); return; }
+    if (a === 'pin') { e.stopPropagation(); return togglePin(id); }
+    if (a === 'copy-body') return copyRich(bodyOut(t, null, 'html'), bodyOut(t, null, 'text')).then(function (ok) { done(btn, ok, 'Copied with formatting – paste into Outlook', missingFields(t, null, false), id); });
+    if (a === 'copy-section') { var i = +btn.getAttribute('data-section'); return copyRich(bodyOut(t, i, 'html'), bodyOut(t, i, 'text')).then(function (ok) { done(btn, ok, 'Copied with formatting', missingFields(t, i, false), id); }); }
+    if (a === 'copy-text') return copyPlain(bodyOut(t, null, 'text')).then(function (ok) { done(btn, ok, 'Plain text copied', missingFields(t, null, false), id); });
+    if (a === 'copy-meta') { var k = btn.getAttribute('data-meta'); return copyPlain(metaOut(t, k)).then(function (ok) { done(btn, ok, k.charAt(0).toUpperCase() + k.slice(1) + ' copied', null, id); }); }
+    if (a === 'mailto') { var mm = missingFields(t, null, true); touch(id); if (mm.length) toast('Opening Outlook · still empty: ' + mm.slice(0, 3).join(', ') + (mm.length > 3 ? ' +' + (mm.length - 3) : ''), 4200); return openMail(t); }
+    if (a === 'clear') { state.values[id] = {}; saveValues(); rerenderCard(id); return; }
     if (a === 'edit') return openEditor(id);
     if (a === 'dup') return duplicate(id);
     if (a === 'up' || a === 'down') return move(id, a === 'up' ? -1 : 1);
@@ -361,9 +482,12 @@
   function onCardInput(e) {
     var f = e.target.getAttribute && e.target.getAttribute('data-field'); if (f == null) return;
     var card = e.target.closest('.card'), id = card.getAttribute('data-id');
-    valuesFor(id)[f] = e.target.value;
-    // keep same-named fields in sync, refresh preview only
-    card.querySelector('.preview-wrap').innerHTML = renderPreview(getT(id));
+    valuesFor(id)[f] = e.target.value; saveValues();
+    var t = getT(id), pr = progress(t);
+    card.querySelector('.preview-wrap').innerHTML = renderPreview(t);
+    var bar = card.querySelector('[data-progbar]'); if (bar) bar.style.width = Math.round(100 * pr.filled / pr.total) + '%';
+    var tx = card.querySelector('[data-progtext]'); if (tx) tx.textContent = pr.filled + ' of ' + pr.total;
+    var bd = card.querySelector('[data-prog]'); if (bd) { bd.textContent = pr.filled + '/' + pr.total + ' filled'; bd.classList.toggle('full', pr.filled === pr.total); }
   }
 
   /* ---------------------------------------------------------------- editing */
@@ -482,6 +606,74 @@
     } else b.hidden = true;
   }
 
+  /* -------------------------------------------------------- command palette */
+  var pal = { flat: [], sel: 0 };
+  function actions() {
+    return [
+      { t: 'New template', s: 'Open the editor', i: '+', run: function () { $('#editToggle').checked = state.edit = true; renderAll(); openEditor(null); } },
+      { t: 'Settings & data', s: 'Signatures, export, import', i: '⚙', run: openSettings },
+      { t: 'Toggle edit mode', s: state.edit ? 'Currently on' : 'Currently off', i: '✎', run: function () { $('#editToggle').checked = state.edit = !state.edit; renderAll(); } },
+      { t: 'Switch light / dark theme', s: 'Currently ' + theme(), i: '◐', run: toggleTheme },
+      { t: 'Copy current date & time', s: stamp(), i: '🕒', run: function () { copyPlain(stamp()).then(function (ok) { done(null, ok, 'Date & time copied'); }); } },
+      { t: 'Expand all templates', s: '', i: '▾', run: function () { visible().forEach(function (t) { state.open.add(t.id); }); renderAll(); } },
+      { t: 'Collapse all templates', s: '', i: '▴', run: function () { state.open.clear(); renderAll(); } }
+    ];
+  }
+  function buildPalette(q) {
+    var terms = q.toLowerCase().split(/\s+/).filter(Boolean), groups = [], ts = state.data.templates;
+    function match(t) { var h = (t.title + ' ' + t.category).toLowerCase(); return terms.every(function (w) { return h.indexOf(w) >= 0; }); }
+    function tItem(t) { return { t: t.title, s: t.category + ' · ' + (t.type === 'chat' ? 'Chat' : 'Email'), i: String(ts.indexOf(t) + 1), run: function () { goTo(t.id); } }; }
+    if (!terms.length) {
+      var pins = prefs.favs.map(getT).filter(Boolean), rec = prefs.recent.map(function (r) { return getT(r.id); }).filter(Boolean).slice(0, 4);
+      if (pins.length) groups.push({ name: 'Pinned', items: pins.map(tItem) });
+      if (rec.length) groups.push({ name: 'Recently used', items: rec.map(tItem) });
+      groups.push({ name: 'All templates', items: ts.map(tItem) });
+    } else {
+      var m = ts.filter(match); if (m.length) groups.push({ name: 'Templates', items: m.map(tItem) });
+    }
+    var acts = actions().filter(function (a) { return terms.every(function (w) { return (a.t + ' ' + a.s).toLowerCase().indexOf(w) >= 0; }); });
+    if (acts.length) groups.push({ name: 'Actions', items: acts });
+    pal.flat = []; var html = '';
+    groups.forEach(function (g) {
+      html += '<div class="pal-group">' + esc(g.name) + '</div>';
+      g.items.forEach(function (it) {
+        html += '<div class="pal-item" data-i="' + pal.flat.length + '"><span class="pi">' + esc(it.i) + '</span><span class="pt">' + esc(it.t) + (it.s ? '<div class="ps">' + esc(it.s) + '</div>' : '') + '</span></div>';
+        pal.flat.push(it);
+      });
+    });
+    pal.sel = 0; $('#palList').innerHTML = html || '<div class="side-empty" style="padding:16px">No matches.</div>'; palMark();
+  }
+  function palMark() {
+    $$('.pal-item').forEach(function (el) { el.classList.toggle('sel', +el.getAttribute('data-i') === pal.sel); });
+    var el = $('.pal-item.sel'); if (el) el.scrollIntoView({ block: 'nearest' });
+  }
+  function palRun(i) { var it = pal.flat[i]; if (!it) return; $('#paletteDlg').close(); setTimeout(it.run, 30); }
+  function openPalette() { $('#palInput').value = ''; buildPalette(''); if (!$('#paletteDlg').open) $('#paletteDlg').showModal(); $('#palInput').focus(); }
+
+  function toggleTheme() { prefs.theme = theme() === 'light' ? 'dark' : 'light'; savePrefs(); applyTheme(); toast(theme() === 'light' ? 'Light theme' : 'Dark theme'); }
+  function toggleClock() { prefs.hour24 = !is24(); savePrefs(); tickClock(); toast(is24() ? '24-hour clock' : '12-hour clock'); }
+
+  function clearFilters() { state.query = ''; state.cat = 'All'; $('#globalSearch').value = ''; renderAll(); }
+
+  /* scroll spy + back to top */
+  var spyQueued = false;
+  function onScroll() {
+    if (spyQueued) return; spyQueued = true;
+    requestAnimationFrame(function () {
+      spyQueued = false;
+      $('#toTop').classList.toggle('show', window.scrollY > 700);
+      var cards = $$('.card'), cur = null;
+      cards.forEach(function (c) { if (c.getBoundingClientRect().top <= 150) cur = c; });
+      if (cur) { var id = cur.getAttribute('data-id'); if (id !== state.active) markActive(id); }
+    });
+  }
+  function copyActive() {
+    var card = (document.activeElement && document.activeElement.closest && document.activeElement.closest('.card')) || document.getElementById('t-' + state.active);
+    if (!card || !card.classList.contains('open')) { toast('Open a template first'); return; }
+    var btn = card.querySelector('[data-action="copy-body"]');
+    if (btn) btn.click(); else toast('This template has several blocks – use each block\'s Copy button');
+  }
+
   /* ------------------------------------------------------------------- init */
   function bind() {
     $('#cards').addEventListener('click', onCardClick);
@@ -508,9 +700,32 @@
     }, true);
 
     $('#globalSearch').addEventListener('input', function (e) { state.query = e.target.value; renderAll(); });
+    $('#globalSearch').addEventListener('keydown', function (e) { if (e.key === 'Escape') { clearFilters(); e.target.blur(); } });
+    $('#clearSearch').addEventListener('click', function () { clearFilters(); $('#globalSearch').focus(); });
+    $('#clearFilters').addEventListener('click', clearFilters);
     document.addEventListener('keydown', function (e) {
-      if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $('#globalSearch').focus(); }
+      var typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !document.querySelector('dialog[open]')) { e.preventDefault(); copyActive(); return; }
+      if (e.key === '/' && !typing) { e.preventDefault(); $('#globalSearch').focus(); }
     });
+    $('#paletteBtn').addEventListener('click', openPalette); $('#navPalette').addEventListener('click', openPalette);
+    $('#themeBtn').addEventListener('click', toggleTheme);
+    $('#clockPill').addEventListener('click', toggleClock); $('#heroTime').addEventListener('click', toggleClock);
+    $('#menuBtn').addEventListener('click', function () { document.body.classList.toggle('nav-open'); });
+    $('#scrim').addEventListener('click', function () { document.body.classList.remove('nav-open'); });
+    $('#toTop').addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+    window.addEventListener('scroll', onScroll, { passive: true });
+    var pi = $('#palInput');
+    pi.addEventListener('input', function () { buildPalette(pi.value); });
+    pi.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); pal.sel = Math.min(pal.flat.length - 1, pal.sel + 1); palMark(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); pal.sel = Math.max(0, pal.sel - 1); palMark(); }
+      else if (e.key === 'Enter') { e.preventDefault(); palRun(pal.sel); }
+    });
+    $('#palList').addEventListener('click', function (e) { var it = e.target.closest('.pal-item'); if (it) palRun(+it.getAttribute('data-i')); });
+    ['paletteDlg', 'settingsDlg'].forEach(function (id) { $('#' + id).addEventListener('click', function (e) { if (e.target === e.currentTarget) e.currentTarget.close(); }); });
+    window.matchMedia && matchMedia('(prefers-color-scheme: light)').addEventListener && matchMedia('(prefers-color-scheme: light)').addEventListener('change', function () { if (!prefs.theme) applyTheme(); });
     $('#editToggle').addEventListener('change', function (e) { state.edit = e.target.checked; renderAll(); toast(state.edit ? 'Edit mode on' : 'Edit mode off'); });
     ['navNew', 'heroNew'].forEach(function (id) { $('#' + id).addEventListener('click', function () { $('#editToggle').checked = state.edit = true; renderAll(); openEditor(null); }); });
     ['navSettings', 'heroSettings'].forEach(function (id) { $('#' + id).addEventListener('click', openSettings); });
@@ -536,7 +751,7 @@
   }
 
   function init() {
-    load(); bind(); renderAll();
+    load(); loadValues(); bind(); renderAll(); startClock(); onScroll();
     var h = location.hash;
     if (h.indexOf('#t-') === 0) goTo(h.slice(3), true);
     else if (state.data.templates[0]) { state.open.add(state.data.templates[0].id); renderAll(); }

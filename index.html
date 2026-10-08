@@ -23,8 +23,19 @@
         <div class="nav-list">
           <a class="nav-btn" href="#template-index"><span class="nav-chip">IDX</span><span>Template index</span></a>
           <button class="nav-btn" id="navNew" type="button"><span class="nav-chip good">+</span><span>New template</span></button>
+          <button class="nav-btn" id="navPalette" type="button"><span class="nav-chip">⌘K</span><span>Quick jump</span></button>
           <button class="nav-btn" id="navSettings" type="button"><span class="nav-chip warn">SET</span><span>Settings &amp; data</span></button>
         </div>
+      </div>
+
+      <div class="side-section">
+        <div class="side-title">Pinned</div>
+        <div id="sidePinned" class="mini-links"></div>
+      </div>
+
+      <div class="side-section">
+        <div class="side-title">Recently used</div>
+        <div id="sideRecent" class="mini-links"></div>
       </div>
 
       <div class="side-section">
@@ -35,7 +46,7 @@
       <details class="details-group">
         <summary>Notes</summary>
         <div class="details-body">
-          <p class="mini-note">Fill in the fields on a template, then copy it straight into Outlook with formatting and links intact. Turn on <b>Edit mode</b> to add or change templates. Press <kbd>/</kbd> to search.</p>
+          <p class="mini-note">Fill in the fields on a template, then copy it straight into Outlook with formatting and links intact. Turn on <b>Edit mode</b> to add or change templates. Press <kbd>/</kbd> to search, <kbd>Ctrl</kbd>+<kbd>K</kbd> for quick jump, <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to copy the open template.</p>
         </div>
       </details>
     </aside>
@@ -43,11 +54,20 @@
     <!-- ============ MAIN ============ -->
     <main class="main">
       <div class="topbar">
+        <button class="icon-btn menu-btn" id="menuBtn" type="button" aria-label="Open menu">☰</button>
         <div class="crumbs">Home <span>›</span> Support toolkit <span>›</span> Templates</div>
-        <div class="searchbar">
+        <div class="searchbar" id="searchbar">
           <span style="opacity:.8;">⌕</span>
-          <input id="globalSearch" type="search" placeholder="Search templates, wording or a category  ( / )" autocomplete="off" />
+          <input id="globalSearch" type="search" placeholder="Search templates, wording or a category" autocomplete="off" aria-label="Search templates" />
+          <button class="clear-x" id="clearSearch" type="button" aria-label="Clear search">✕</button>
+          <span class="kbd-hint">/</span>
         </div>
+        <button class="clock-pill" id="clockPill" type="button" title="Synced with your device clock · click to switch 12h / 24h">
+          <span class="cdot"></span>
+          <span><span class="ct" id="clockTime">--:--:--</span><br><span class="cd" id="clockDate">--</span></span>
+        </button>
+        <button class="icon-btn" id="paletteBtn" type="button" title="Quick jump (Ctrl+K)" aria-label="Quick jump">⌕</button>
+        <button class="icon-btn" id="themeBtn" type="button" title="Switch light / dark theme" aria-label="Toggle theme">☾</button>
         <label class="switch" title="Show editing controls">
           <input type="checkbox" id="editToggle" />
           <span class="slider"></span><span class="switch-label">Edit mode</span>
@@ -70,6 +90,13 @@
           </div>
         </div>
         <div class="hero-aside">
+          <div class="clock-card" aria-live="off">
+            <div class="greet" id="clockGreet">Hello</div>
+            <div class="big" id="heroTime" title="Click to switch 12h / 24h">--:--:--</div>
+            <div class="date" id="heroDate">--</div>
+            <div class="tz" id="heroTz">--</div>
+            <div class="meta-line"><span class="tag" id="tagWeek">Week --</span><span class="tag" id="tagDay">Day --</span><span class="tag" id="tagSync">Synced with device clock</span></div>
+          </div>
           <div class="stat"><div class="k">Templates</div><div class="v" id="statCount">0</div></div>
           <div class="stat"><div class="k">Categories</div><div class="v" id="statCats">0</div></div>
           <div class="stat"><div class="k">Data version</div><div class="v small" id="statVersion">–</div></div>
@@ -90,9 +117,9 @@
       </section>
 
       <section id="cards" class="cards"></section>
-      <div id="emptyState" class="empty" hidden>No templates match your search. Clear the search or pick another category.</div>
+      <div id="emptyState" class="empty" hidden>No templates match your search.<br><button class="btn primary" id="clearFilters" type="button">Clear search &amp; filters</button></div>
 
-      <footer class="foot">Templates Hub · static app, no server required · edits are saved in this browser until you publish them (Settings &amp; data → Export).</footer>
+      <footer class="foot">Templates Hub · v2 · static app, no server required · edits are saved in this browser until you publish them (Settings &amp; data → Export).</footer>
     </main>
   </div>
 
@@ -181,6 +208,14 @@
     </div>
   </dialog>
 
+  <dialog id="paletteDlg" aria-label="Quick jump">
+    <input id="palInput" type="text" placeholder="Jump to a template or run an action…" autocomplete="off" />
+    <div class="pal-list" id="palList"></div>
+    <div class="pal-foot"><span>↑↓ navigate</span><span>Enter open</span><span>Esc close</span></div>
+  </dialog>
+
+  <div class="scrim" id="scrim"></div>
+  <button class="icon-btn to-top" id="toTop" type="button" aria-label="Back to top" title="Back to top">↑</button>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="data.js"></script>
