@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clinical Systems Support | Templates Hub</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- ============ SIDEBAR ============ -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">CS</div>
+        <div>
+          <div class="brand-title">Templates Hub</div>
+          <div class="brand-subtitle">Clinical Systems Support</div>
+        </div>
+      </div>
+
+      <div class="side-section">
+        <div class="side-title">Quick actions</div>
+        <div class="nav-list">
+          <a class="nav-btn" href="#template-index"><span class="nav-chip">IDX</span><span>Template index</span></a>
+          <button class="nav-btn" id="navNew" type="button"><span class="nav-chip good">+</span><span>New template</span></button>
+          <button class="nav-btn" id="navSettings" type="button"><span class="nav-chip warn">SET</span><span>Settings &amp; data</span></button>
+        </div>
+      </div>
+
+      <div class="side-section">
+        <div class="side-title">Browse by category</div>
+        <div id="sideNav"></div>
+      </div>
+
+      <details class="details-group">
+        <summary>Notes</summary>
+        <div class="details-body">
+          <p class="mini-note">Fill in the fields on a template, then copy it straight into Outlook with formatting and links intact. Turn on <b>Edit mode</b> to add or change templates. Press <kbd>/</kbd> to search.</p>
+        </div>
+      </details>
+    </aside>
+
+    <!-- ============ MAIN ============ -->
+    <main class="main">
+      <div class="topbar">
+        <div class="crumbs">Home <span>›</span> Support toolkit <span>›</span> Templates</div>
+        <div class="searchbar">
+          <span style="opacity:.8;">⌕</span>
+          <input id="globalSearch" type="search" placeholder="Search templates, wording or a category  ( / )" autocomplete="off" />
+        </div>
+        <label class="switch" title="Show editing controls">
+          <input type="checkbox" id="editToggle" />
+          <span class="slider"></span><span class="switch-label">Edit mode</span>
+        </label>
+      </div>
+
+      <div id="updateBanner" class="banner" hidden></div>
+
+      <section class="hero">
+        <div>
+          <div class="eyebrow">Interactive template portal</div>
+          <h1>Support Email &amp; Chat Templates</h1>
+          <p>Every template from the original document in one place. Click any item in the index to jump straight to it, fill in the highlighted fields, and copy a ready-to-send message. Templates can be added, edited, reordered and published whenever the process changes.</p>
+          <div class="hero-actions">
+            <a class="action-btn primary" href="#template-index"><span class="action-icon">≡</span><span>Open template index</span></a>
+            <button class="action-btn" id="heroNew" type="button"><span class="action-icon">+</span><span>New template</span></button>
+            <button class="action-btn" id="heroSettings" type="button"><span class="action-icon">⚙</span><span>Settings &amp; data</span></button>
+            <button class="action-btn" id="expandAll" type="button"><span class="action-icon">▾</span><span>Expand all</span></button>
+            <button class="action-btn" id="collapseAll" type="button"><span class="action-icon">▴</span><span>Collapse all</span></button>
+          </div>
+        </div>
+        <div class="hero-aside">
+          <div class="stat"><div class="k">Templates</div><div class="v" id="statCount">0</div></div>
+          <div class="stat"><div class="k">Categories</div><div class="v" id="statCats">0</div></div>
+          <div class="stat"><div class="k">Data version</div><div class="v small" id="statVersion">–</div></div>
+          <div class="stat"><div class="k">Source</div><div class="v small" id="statSource">Published</div></div>
+        </div>
+      </section>
+
+      <section class="panel" id="template-index">
+        <div class="panel-head">
+          <div>
+            <h3>Template index</h3>
+            <div class="card-sub">Click a title to open that template. Filter by category below.</div>
+          </div>
+          <div class="pill" id="resultPill">0 shown</div>
+        </div>
+        <div class="chips" id="catChips"></div>
+        <ol class="index-list" id="indexList"></ol>
+      </section>
+
+      <section id="cards" class="cards"></section>
+      <div id="emptyState" class="empty" hidden>No templates match your search. Clear the search or pick another category.</div>
+
+      <footer class="foot">Templates Hub · static app, no server required · edits are saved in this browser until you publish them (Settings &amp; data → Export).</footer>
+    </main>
+  </div>
+
+  <!-- ============ TEMPLATE EDITOR ============ -->
+  <dialog id="editorDlg">
+    <form method="dialog" id="editorForm" class="dlg-body">
+      <div class="dlg-head">
+        <h2 id="editorTitle">Edit template</h2>
+        <button type="button" class="btn" data-close="editorDlg">✕</button>
+      </div>
+      <div class="grid2">
+        <div><label for="eTitle">Title</label><input id="eTitle" type="text" required /></div>
+        <div><label for="eCategory">Category</label><input id="eCategory" type="text" list="catList" required /><datalist id="catList"></datalist></div>
+        <div><label for="eType">Type</label>
+          <select id="eType"><option value="email">Email</option><option value="chat">Chat message</option></select></div>
+        <div><label for="eNote">Reminder note (optional)</label><input id="eNote" type="text" placeholder="e.g. Attach the report before sending" /></div>
+      </div>
+      <div class="grid2 email-only">
+        <div><label for="eTo">To</label><input id="eTo" type="text" placeholder="name@company.com; {{Field}}" /></div>
+        <div><label for="eCc">Cc</label><input id="eCc" type="text" /></div>
+      </div>
+      <div class="email-only"><label for="eSubject">Subject</label><input id="eSubject" type="text" /></div>
+
+      <label for="eBody">Message body</label>
+      <div class="toolbar">
+        <button type="button" class="btn" data-fmt="bold"><b>B</b> Bold</button>
+        <button type="button" class="btn" data-fmt="link">Link</button>
+        <button type="button" class="btn" data-fmt="bullet">• Bullet</button>
+        <button type="button" class="btn" data-fmt="field">{{ }} Field</button>
+        <button type="button" class="btn" data-fmt="section">## Section</button>
+        <button type="button" class="btn" data-fmt="sig">Signature</button>
+        <button type="button" class="btn" data-fmt="fullsig">Full signature</button>
+      </div>
+      <div class="grid2 editor-split">
+        <textarea id="eBody" spellcheck="true"></textarea>
+        <div>
+          <div class="preview-label">Live preview</div>
+          <div class="preview" id="ePreview"></div>
+        </div>
+      </div>
+      <p class="mini-note" id="eFields">Detected fields: none</p>
+      <details class="details-group">
+        <summary>Formatting help</summary>
+        <div class="details-body mini-note">
+          <code>{{Field name}}</code> creates a fill-in box · <code>{{Type|A;B;C}}</code> creates a dropdown · <code>{{Notes|multiline}}</code> creates a large text box ·
+          <code>**bold**</code> · <code>[link text](https://url)</code> · lines starting with <code>- </code> become bullets · <code>## Heading</code> splits a template into separately copyable blocks ·
+          <code>{{signature}}</code> and <code>{{fullSignature}}</code> insert your signatures from Settings.
+        </div>
+      </details>
+      <div class="dlg-actions">
+        <button type="button" class="btn" data-close="editorDlg">Cancel</button>
+        <button type="submit" class="btn primary" id="eSave">Save template</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ============ SETTINGS ============ -->
+  <dialog id="settingsDlg">
+    <div class="dlg-body">
+      <div class="dlg-head">
+        <h2>Settings &amp; data</h2>
+        <button type="button" class="btn" data-close="settingsDlg">✕</button>
+      </div>
+
+      <h3>Signatures</h3>
+      <p class="mini-note">Used wherever a template contains <code>{{signature}}</code> or <code>{{fullSignature}}</code>. Same formatting rules as templates.</p>
+      <label for="sSig">Short signature</label>
+      <textarea id="sSig" class="sig"></textarea>
+      <label for="sFull">Full signature</label>
+      <textarea id="sFull" class="sig"></textarea>
+      <div class="inline-buttons"><button class="btn primary" id="saveSettings" type="button">Save signatures</button></div>
+
+      <h3>Update &amp; publish</h3>
+      <p class="mini-note">Edits you make are saved in <b>this browser only</b>. To update the site for everyone: click <b>Export data.js</b>, replace <code>data.js</code> in the project (or GitHub repo) with the downloaded file, and redeploy. Other browsers will then offer to switch to the new published version.</p>
+      <div class="inline-buttons">
+        <button class="btn primary" id="exportJs" type="button">⬇ Export data.js</button>
+        <button class="btn" id="exportJson" type="button">⬇ Export JSON backup</button>
+        <button class="btn" id="importBtn" type="button">⬆ Import JSON</button>
+        <button class="btn danger" id="resetBtn" type="button">Reset to published version</button>
+        <input type="file" id="importFile" accept=".json,application/json" hidden />
+      </div>
+
+      <h3>Change log</h3>
+      <div id="changeLog" class="changelog"></div>
+      <div class="dlg-actions"><button type="button" class="btn" data-close="settingsDlg">Close</button></div>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
